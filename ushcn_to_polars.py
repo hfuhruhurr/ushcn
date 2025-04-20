@@ -1,4 +1,3 @@
-```python
 import tarfile
 import os
 import polars as pl
@@ -96,8 +95,22 @@ def parse_data(file_path, element):
     
     return df
 
-# Main function
-def main():
+# Process station data
+def process_stations():
+    # Parse stations
+    data_dir = 'source-data/raw/20250419'
+    station_file = os.path.join(data_dir, 'ushcn-v2.5-stations.txt')
+    if os.path.exists(station_file):
+        print('Processing stations...')
+        stations_df = parse_stations(station_file)
+        stations_df.write_parquet('ushcn_stations.parquet')
+        print('Saved stations to ushcn_stations.parquet')
+    else:
+        print(f'Station file {station_file} not found.')
+        return
+    
+# Process element data
+def process_elements():
     # List of elements to process
     elements = ['tmax', 'tmin', 'tavg', 'prcp']
     
@@ -113,17 +126,7 @@ def main():
         return
     data_dir = extracted_dirs[0]
     
-    # Parse stations
-    station_file = os.path.join(data_dir, 'ushcn-v2.5-stations.txt')
-    if os.path.exists(station_file):
-        print('Processing stations...')
-        stations_df = parse_stations(station_file)
-        stations_df.write_parquet('ushcn_stations.parquet')
-        print('Saved stations to ushcn_stations.parquet')
-    else:
-        print(f'Station file {station_file} not found.')
-        return
-    
+
     # Parse and combine data for each element
     data_dfs = []
     for element in elements:
@@ -143,6 +146,9 @@ def main():
     else:
         print('No data files processed.')
 
+def main():
+    process_stations()
+    # process_elements()
+    
 if __name__ == '__main__':
     main()
-```
