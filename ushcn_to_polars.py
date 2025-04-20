@@ -2,12 +2,16 @@ import tarfile
 import os
 import polars as pl
 import glob
-from datetime import datetime
+
+# Configuration
+RAW_DATA_DIR = 'source-data/raw/20250419'  # Directory containing .tar.gz files
+DATASET_TYPES = ['raw', 'tob', 'FLs.52j']  
+ELEMENTS = ['tmax', 'tmin', 'tavg', 'prcp'] 
 
 # Function to extract tar.gz files
 def extract_tar_gz(file_path, extract_path='.'):
     with tarfile.open(file_path, 'r:gz') as tar:
-        tar.extractall(path=extract_path)
+        tar.extractall(path=extract_path, filter="data")  # Use "data" for safe extraction
 
 # Function to parse the station file
 def parse_stations(file_path):
@@ -50,11 +54,13 @@ def parse_stations(file_path):
     return pl.DataFrame(data, schema=schema)
 
 # Function to parse data file
-def parse_data(file_path, element):
+def parse_element_data(file_path, element, dataset_type):
     data = []
     with open(file_path, 'r') as f:
         for line in f:
             record = {
+                'country_code': line[0:2].strip(),
+                'network_code': line[2:3].strip(),
                 'coop_id': line[5:11].strip(),
                 'year': int(line[12:16].strip())
             }
@@ -66,6 +72,7 @@ def parse_data(file_path, element):
                     'year': record['year'],
                     'month': month,
                     'element': element,
+                    'dataset_type': dataset_type,
                     'value': value if value != -9999 else None,
                     'dmflag': line[start+6:start+7].strip() or None,
                     'qcflag': line[start+7:start+8].strip() or None,
@@ -76,9 +83,10 @@ def parse_data(file_path, element):
     # Define schema for monthly data
     schema = {
         'coop_id': pl.Utf8,
-        'year': pl.Int32,
-        'month': pl.Int32,
+        'year': pl.UInt16,
+        'month': pl.UInt8,
         'element': pl.Utf8,
+        'dataset_type': pl.Utf8,
         'value': pl.Float64,
         'dmflag': pl.Utf8,
         'qcflag': pl.Utf8,
@@ -111,32 +119,33 @@ def process_stations():
     
 # Process element data
 def process_elements():
-    # List of elements to process
-    elements = ['tmax', 'tmin', 'tavg', 'prcp']
-    
     # Extract all .tar.gz files
-    for file in glob.glob('ushcn.*.latest.FLs.52i.tar.gz'):
+    raw_data_dir = 'source-data/raw/20250419'
+    for file in glob.glob(f'{raw_data_dir}/ushcn.*.latest.*.tar.gz'):
         print(f'Extracting {file}...')
-        extract_tar_gz(file)
+        extract_tar_gz(file, raw_data_dir)
     
     # Find the extracted directory
-    extracted_dirs = glob.glob('ushcn.2.5.0.*')
+    extracted_dirs = glob.glob(f'{raw_data_dir}/ushcn.v2.5.5*')
     if not extracted_dirs:
         print('No extracted directories found.')
         return
-    data_dir = extracted_dirs[0]
+    extracted_data_dir = extracted_dirs[0]
     
 
     # Parse and combine data for each element
     data_dfs = []
-    for element in elements:
-        data_file = os.path.join(data_dir, f'ushcn2014_{element}_FLs.52i.txt')
-        if os.path.exists(data_file):
-            print(f'Processing {element} data...')
-            data_df = parse_data(data_file, element)
-            data_dfs.append(data_df)
-        else:
-            print(f'Data file {data_file} not found.')
+    for element in ELEMENTS:
+        for dataset_type in DATASET_TYPES:
+            # Find all files for this element and dataset type
+            data_files = glob.glob(os.path.join(extracted_data_dir, f'*.{dataset_type}.{element}'))
+            if data_files:
+                print(f'Processing {element}:{dataset_type} data ({len(data_files)} files)...')
+                for data_file in data_files:
+                    data_df = parse_element_data(data_file, element, dataset_type)
+                    data_dfs.append(data_df)
+            else:
+                print(f'No data files found for {element} with dataset type {dataset_type}.')
     
     if data_dfs:
         # Combine all data into a single DataFrame
@@ -147,8 +156,8 @@ def process_elements():
         print('No data files processed.')
 
 def main():
-    process_stations()
-    # process_elements()
-    
+    # process_stations()
+    process_elements()
+
 if __name__ == '__main__':
     main()
